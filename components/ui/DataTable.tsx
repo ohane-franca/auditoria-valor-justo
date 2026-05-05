@@ -36,7 +36,7 @@ export function DataTable({ columns, rows }: DataTableProps) {
                     fontSize: "var(--font-size-xs)",
                     fontWeight: "var(--font-weight-title)",
                     fontFamily: "var(--font-family)",
-                    color: "#FFFFFF",
+                    color: "var(--color-surface)",
                     textAlign: col.numeric ? "right" : "left",
                     letterSpacing: "0.05em",
                     textTransform: "uppercase",

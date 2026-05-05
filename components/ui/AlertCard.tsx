@@ -4,9 +4,9 @@ const variantMap: Record<
   AlertVariant,
   { bg: string; text: string; accent: string; icon: string }
 > = {
-  "ATENÇÃO":   { bg: "var(--status-atencao-bg)",   text: "var(--status-atencao-text)",   accent: "#F0A050", icon: "⚠" },
-  "VERIFICAR": { bg: "var(--status-verificar-bg)", text: "var(--status-verificar-text)", accent: "#D4A017", icon: "◎" },
-  "ERRO":      { bg: "var(--status-erro-bg)",      text: "var(--status-erro-text)",      accent: "#6C757D", icon: "✕" },
+  "ATENÇÃO":   { bg: "var(--status-atencao-bg)",   text: "var(--status-atencao-text)",   accent: "var(--status-atencao-text)", icon: "⚠" },
+  "VERIFICAR": { bg: "var(--status-verificar-bg)", text: "var(--status-verificar-text)", accent: "var(--status-verificar-text)", icon: "◎" },
+  "ERRO":      { bg: "var(--status-erro-bg)",      text: "var(--status-erro-text)",      accent: "var(--status-erro-text)", icon: "✕" },
 };
 
 interface AlertCardProps {
