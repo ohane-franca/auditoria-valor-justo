@@ -24,6 +24,7 @@ export async function GET(
 
   // Start the job in background only if it hasn't started yet
   if (job.status === "pending") {
+    job.status = "processing";
     runAuditJob(jobId).catch((err) => {
       const j = jobs.get(jobId);
       if (j && j.status !== "done") {
