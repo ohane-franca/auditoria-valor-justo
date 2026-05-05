@@ -7,7 +7,7 @@ digitais conforme NBC TA 540 e Resolução BCB 5821.
 ## Pré-requisitos
 - Node.js 18+
 - npm 9+
-- Chaves de API: Coinbase Advanced Trade
+ 
 
 ## Instalação
 ```bash

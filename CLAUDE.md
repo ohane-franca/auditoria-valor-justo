@@ -3,15 +3,14 @@ Ferramenta interna de auditoria financeira de ativos digitais.
 CLA Brasil — Teste de Mensuração de Valor Justo (Resolução BCB 5821).
 
 # Stack
-- Framework: Next.js 15 (App Router) + TypeScript
+- Framework: Next.js 16 (App Router) + TypeScript
 - UI: Tailwind CSS + Shadcn + tokens em app/styles/tokens.css
 - Excel: ExcelJS
 - Hospedagem: Railway
 
 # Estrutura de pastas relevante
 - app/api/audit/         → 3 rotas (start, progress, download)
-- lib/audit/             → validator, ticker-mapper, price-calculator,
-                           excel-exporter, orchestrator
+- lib/audit/             → validator, price-calculator, excel-exporter, orchestrator
 - lib/exchanges/         → binance, ptax
 - store/jobs.ts          → Map em memória de jobs
 - components/ui/         → StatusBadge, DataTable, UploadDropzone,

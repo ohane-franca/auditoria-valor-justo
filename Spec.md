@@ -1,6 +1,6 @@
 # Spec.md — Teste de Mensuração de Valor Justo de Ativos Digitais
 
-> **Status:** Aguardando aprovação. Nenhum código será escrito antes da aprovação desta Spec.
+> **Status:** Atualizada para implementação Binance + PTAX (fonte única).
 
 ---
 
@@ -15,11 +15,7 @@ Auditor faz upload de .xlsx
         ↓
 Backend valida estrutura da planilha
         ↓
-Para cada linha: consulta Binance + Coinbase + Bybit em paralelo (candle close diário, UTC)
-        ↓
-Calcula preco_referencia (mediana das fontes disponíveis)
-        ↓
-Consulta PTAX venda (BCB) para a data_base em UTC-3
+Para cada linha: consulta Binance (close 23h59 BRT via candle 1h) em paralelo com PTAX venda (BCB)
         ↓
 Calcula valor_justo, diferenca_percentual e status
         ↓
@@ -29,7 +25,8 @@ Exporta Teste_ValorJusto_[DATA_EXECUCAO].xlsx com 2 abas
 **Premissas e limitações:**
 - A ferramenta gera **evidências** — o julgamento contábil é sempre do auditor.
 - Preços em USD (USDT), convertidos para BRL via PTAX venda do BCB.
-- Datas de preço interpretadas em UTC; PTAX interpretada em UTC-3 (Brasília).
+- `data_base` é interpretada como **dia calendário no Brasil (UTC-3)**.
+- Para preço de cripto, capturamos o **close às 23h59 BRT** usando o candle **1h** da Binance correspondente a **02:00–02:59 UTC do dia D+1**.
 - Chaves de API nunca expostas ao frontend; toda lógica de chamada às exchanges roda exclusivamente em API Routes do Next.js.
 
 ---
@@ -38,20 +35,18 @@ Exporta Teste_ValorJusto_[DATA_EXECUCAO].xlsx com 2 abas
 
 | Camada | Tecnologia | Justificativa |
 |---|---|---|
-| Framework | Next.js 15 (App Router) | Já presente no projeto; suporte nativo a API Routes mantém lógica sensível no servidor |
+| Framework | Next.js 16 (App Router) | Já presente no projeto; suporte nativo a API Routes mantém lógica sensível no servidor |
 | Linguagem | TypeScript 5 | Tipagem estrita reduz erros em cálculos financeiros |
 | UI | Tailwind CSS v4 + shadcn/ui | Tailwind já configurado; shadcn entrega componentes acessíveis sem runtime CSS extra |
 | Parse de Excel (entrada) | SheetJS (xlsx) | Leitura de .xlsx no servidor sem dependências nativas |
-| Geração de Excel (saída) | SheetJS (xlsx) | Mesma lib; evita dependência adicional |
+| Geração de Excel (saída) | ExcelJS | Melhor controle de formatação/abas (Resultados + Metadados) |
 | HTTP cliente (APIs externas) | fetch nativo (Node 18+) | Sem dependência extra; suporte a AbortController para timeouts |
 | Variáveis de ambiente | .env (Next.js built-in) | Chaves nunca expostas ao bundle do cliente |
 | Hospedagem | Railway | Deploy zero-config para Next.js; serverless functions para as API Routes |
 
-**Dependências novas a instalar:**
-```bash
-npm install xlsx shadcn-ui
-npx shadcn@latest init
-```
+**Dependências principais:**
+- `xlsx` (entrada)
+- `exceljs` (saída)
 
 ---
 
@@ -119,10 +114,6 @@ Componentes:
 │   ✓  9  APROVADO                                    │
 │   ⚠  3  ALERTA                                      │
 │                                                     │
-│  Alertas de consistência:                           │
-│  • BTC (2024-12-31): VERIFICAR — desvio de 2,1%...  │
-│  • XRP (2024-12-31): ATENÇÃO — fonte única…         │
-│                                                     │
 │  [⬇ Baixar Teste_ValorJusto_20250501_143022.xlsx]   │
 │                                                     │
 │  [Nova auditoria]                                   │
@@ -131,7 +122,6 @@ Componentes:
 
 Componentes:
 - Contadores por status
-- Lista de alertas (apenas linhas com `alerta_consistencia` não vazio)
 - Botão de download que aciona `/api/audit/download/[jobId]`
 - Botão "Nova auditoria" que reseta para Fase 1
 
@@ -221,13 +211,6 @@ type AuditSummary = {
   aprovado: number
   alerta: number
   erro: number
-  alerts: AlertItem[]   // linhas com alerta_consistencia não vazio
-}
-
-type AlertItem = {
-  ticker: string
-  data_base: string
-  alerta_consistencia: string
 }
 ```
 
@@ -260,12 +243,10 @@ Body: Buffer (arquivo xlsx)
 
 Estes módulos são funções TypeScript chamadas internamente pelo job de processamento, não rotas HTTP expostas.
 
-#### `fetchBinanceClose(symbol: string, date: string): Promise<number | null>`
-#### `fetchCoinbaseClose(symbol: string, date: string): Promise<number | null>`
-#### `fetchBybitClose(symbol: string, date: string): Promise<number | null>`
-#### `fetchPtax(date: string): Promise<number | null>`
+#### `fetchBinanceClose(ticker: string, date: string): Promise<{ price: number; dateUsed: string } | null>`
+#### `fetchPtax(date: string): Promise<{ rate: number; dateUsed: string } | null>`
 
-Retornam `null` quando o dado não está disponível (ticker não encontrado, timeout após 3 tentativas, resposta vazia).
+Retornam `null` quando o dado não está disponível (ticker não encontrado, timeout após retentativas, resposta vazia).
 
 ---
 
@@ -295,13 +276,10 @@ auditoria-valor-justo/
 │   ├── audit/
 │   │   ├── orchestrator.ts           # Coordena o fluxo dos 8 passos
 │   │   ├── validator.ts              # Valida estrutura da planilha
-│   │   ├── ticker-mapper.ts          # Mapeia ticker → símbolo de cada exchange
-│   │   ├── price-calculator.ts      # Mediana, alertas de consistência, status
-│   │   └── excel-exporter.ts        # Monta e serializa o xlsx de saída
+│   │   ├── price-calculator.ts      # Status (APROVADO/ALERTA) por desvio percentual
+│   │   └── excel-exporter.ts        # Monta e serializa o xlsx de saída (2 abas)
 │   └── exchanges/
 │       ├── binance.ts                # fetchBinanceClose
-│       ├── coinbase.ts               # fetchCoinbaseClose
-│       ├── bybit.ts                  # fetchBybitClose
 │       └── ptax.ts                   # fetchPtax
 ├── store/
 │   └── jobs.ts                       # Map em memória: jobId → JobState
@@ -330,22 +308,22 @@ auditoria-valor-justo/
 
 **Base URL:** `https://api.binance.com`
 
-**Objetivo:** obter o preço de fechamento (close) do candle diário na `data_base`.
+**Objetivo:** obter o preço de fechamento (close) **às 23h59 BRT** do dia `data_base`.
 
 **Request:**
 ```
 GET /api/v3/klines
   ?symbol=BTCUSDT
-  &interval=1d
-  &startTime={unix_ms_início_do_dia_UTC}
-  &endTime={unix_ms_fim_do_dia_UTC}
+  &interval=1h
+  &startTime={unix_ms_02:00Z_do_dia_D+1}
+  &endTime={unix_ms_02:59:59.999Z_do_dia_D+1}
   &limit=1
 ```
 
-**Exemplo para 2024-12-31:**
+**Exemplo para 2024-12-31 (D):**
 ```
-startTime = 1735603200000   (2024-12-31T00:00:00Z em ms)
-endTime   = 1735689599999   (2024-12-31T23:59:59.999Z em ms)
+startTime = 1735696800000   (2025-01-01T02:00:00Z em ms)
+endTime   = 1735700399999   (2025-01-01T02:59:59.999Z em ms)
 ```
 
 **Response (array de arrays):**
@@ -366,122 +344,17 @@ endTime   = 1735689599999   (2024-12-31T23:59:59.999Z em ms)
 
 **Campo extraído:** índice `[4]` do primeiro elemento → `parseFloat("96400.00")`.
 
-**Resposta vazia** (array `[]`): data indisponível → retorna `null`.
+**Resposta vazia** (array `[]`): data indisponível (feriado/fim de semana/sem candle) → tenta dia anterior (retroativo) até 5 dias; se esgotar, retorna `null`.
 
 **Mapeamento de ticker:** `{ticker}USDT` — ex: `BTC` → `BTCUSDT`
 
 **Rate limit:** 1.200 request weight/min. Cada klines = weight 2. Delay mínimo: 100 ms entre requisições.
 
-**Retry:** backoff exponencial — 500 ms, 1.000 ms, 2.000 ms (máx 3 tentativas). HTTP 429 ou 5xx disparam retry.
+**Retry:** backoff exponencial — 500 ms, 1.000 ms, 2.000 ms (máx 3 retentativas). HTTP 429 ou 5xx disparam retry.
 
 ---
 
-### 6.2 Coinbase Advanced Trade — `GET /api/v3/brokerage/market/candles`
-
-**Base URL:** `https://api.coinbase.com`
-
-**Autenticação:** API Key + Secret via header `CB-ACCESS-KEY` / `CB-ACCESS-SIGN` / `CB-ACCESS-TIMESTAMP`. Assinatura HMAC-SHA256.
-
-**Request:**
-```
-GET /api/v3/brokerage/market/candles
-  ?product_id=BTC-USD
-  &start={unix_seg_início_do_dia_UTC}
-  &end={unix_seg_fim_do_dia_UTC}
-  &granularity=ONE_DAY
-
-Headers:
-  CB-ACCESS-KEY:       {COINBASE_API_KEY}
-  CB-ACCESS-SIGN:      {hmac_sha256(timestamp + "GET" + path + body)}
-  CB-ACCESS-TIMESTAMP: {unix_seg_atual}
-```
-
-**Exemplo para 2024-12-31:**
-```
-start = 1735603200   (2024-12-31T00:00:00Z)
-end   = 1735689600   (2025-01-01T00:00:00Z)
-```
-
-**Response:**
-```json
-{
-  "candles": [
-    {
-      "start":  "1735603200",
-      "low":    "96100.00",
-      "high":   "96600.00",
-      "open":   "96200.00",
-      "close":  "96250.00",   // ← valor usado
-      "volume": "8765.43"
-    }
-  ]
-}
-```
-
-**Campo extraído:** `candles[0].close` → `parseFloat("96250.00")`.
-
-**Array vazio** (`candles: []`): retorna `null`.
-
-**Mapeamento de ticker:** `{ticker}-USD` — ex: `BTC` → `BTC-USD`
-
-**Rate limit:** 30 req/s por IP. Delay mínimo: 50 ms.
-
-**Retry:** mesmo padrão — 500 ms, 1.000 ms, 2.000 ms. HTTP 429 ou 5xx disparam retry.
-
----
-
-### 6.3 Bybit — `GET /v5/market/kline`
-
-**Base URL:** `https://api.bybit.com`
-
-**Autenticação:** Não requerida para endpoints públicos de mercado.
-
-**Request:**
-```
-GET /v5/market/kline
-  ?category=spot
-  &symbol=BTCUSDT
-  &interval=D
-  &start={unix_ms_início_do_dia_UTC}
-  &end={unix_ms_fim_do_dia_UTC}
-```
-
-**Exemplo para 2024-12-31:**
-```
-start = 1735603200000
-end   = 1735689599999
-```
-
-**Response:**
-```json
-{
-  "retCode": 0,
-  "retMsg": "OK",
-  "result": {
-    "symbol": "BTCUSDT",
-    "category": "spot",
-    "list": [
-      [
-        "1735603200000",  // [0] Open time (ms)
-        "96200.00",       // [1] Open
-        "96600.00",       // [2] High
-        "96100.00",       // [3] Low
-        "96500.00",       // [4] Close  ← valor usado
-        "1100.50",        // [5] Volume
-        "106090000.00"    // [6] Turnover
-      ]
-    ]
-  }
-}
-```
-
-**Campo extraído:** `result.list[0][4]` → `parseFloat("96500.00")`.
-
-**`retCode !== 0`** ou `list` vazio: retorna `null`.
-
-**Mapeamento de ticker:** `{ticker}USDT` — ex: `BTC` → `BTCUSDT`
-
-**Rate limit:** 120 req/min por IP. Delay mínimo: 100 ms.
+> Nesta versão, a ferramenta consulta **apenas Binance + PTAX (BCB)**.
 
 **Retry:** mesmo padrão — 500 ms, 1.000 ms, 2.000 ms.
 
@@ -531,59 +404,17 @@ GET /olinda/servico/PTAX/versao/v1/odata/CotacaoDolarDia(dataCotacao=@dataCotaca
 
 ## 7. Regras de Cálculo — Referência
 
-### 7.1 Lógica de `preco_referencia` e `alerta_consistencia`
+### 7.1 Preço e câmbio utilizados
 
-```typescript
-// Valores disponíveis = aqueles que não são null
-// Mediana de 3 valores: o valor central após ordenação
-// Mediana de 2 valores: média simples
-
-function calcularPrecoReferencia(
-  binance: number | null,
-  coinbase: number | null,
-  bybit: number | null
-): { preco: number; alerta: string } {
-
-  const disponiveis = [binance, coinbase, bybit].filter(v => v !== null)
-
-  if (disponiveis.length === 0)
-    throw new Error("Nenhuma fonte disponível")   // status = ERRO
-
-  if (disponiveis.length === 1)
-    return { preco: disponiveis[0], alerta: "ATENÇÃO — fonte única, revisão obrigatória" }
-
-  const mediana = calcMediana(disponiveis)
-
-  // Verifica desvio > 1,5% em qualquer fonte
-  const alertas = []
-  const fontes = [
-    { nome: "Binance",  valor: binance },
-    { nome: "Coinbase", valor: coinbase },
-    { nome: "Bybit",    valor: bybit },
-  ]
-  for (const f of fontes) {
-    if (f.valor === null) continue
-    const desvio = Math.abs((f.valor - mediana) / mediana) * 100
-    if (desvio > 1.5)
-      alertas.push(`VERIFICAR — desvio de ${desvio.toFixed(1)}% na ${f.nome}`)
-  }
-
-  let alerta = ""
-  if (disponiveis.length === 2)
-    alerta = "ATENÇÃO — apenas 2 fontes disponíveis"
-  if (alertas.length > 0)
-    alerta = alertas.join("; ")    // desvio tem precedência se ambos ocorrerem
-
-  return { preco: mediana, alerta }
-}
-```
+- `result_binance`: close às **23h59 BRT** da `data_base` (via candle 1h 02:00–02:59 UTC do dia D+1).
+- `ptax_data_base`: **PTAX venda** (BCB) para a `data_base` (UTC-3). Em caso de ausência de cotação (feriado/fim de semana), usar o dia útil anterior (máx 5 dias retroativos) e registrar em `observacao`.
 
 ### 7.2 Status final
 
 ```typescript
 // valor_declarado já em BRL (total, não por unidade)
 const valorPorUnidade  = valor_declarado / quantidade         // BRL/unidade
-const valorJusto       = preco_referencia * ptax_data_base    // BRL/unidade
+const valorJusto       = result_binance * ptax_data_base      // BRL/unidade
 const diferencaPerc    = Math.abs((valorPorUnidade - valorJusto) / valorJusto) * 100
 
 const status = diferencaPerc > 1.5 ? "ALERTA" : "APROVADO"
@@ -609,14 +440,10 @@ Ao consultar um candle e receber resposta vazia:
 | valor_declarado | number | Conforme informado (BRL total) |
 | data_base | string | YYYY-MM-DD |
 | result_binance | number \| "N/D" | Preço de fechamento em USD |
-| result_coinbase | number \| "N/D" | Preço de fechamento em USD |
-| result_bybit | number \| "N/D" | Preço de fechamento em USD |
-| preco_referencia | number \| "ERRO" | Mediana em USD |
 | ptax_data_base | number \| "N/D" | Taxa PTAX venda (BRL/USD) |
 | valor_justo | number \| "ERRO" | Em BRL/unidade |
 | diferenca_percentual | number \| "ERRO" | Em % (ex: 1.52) |
 | status | "APROVADO" \| "ALERTA" \| "ERRO" | |
-| alerta_consistencia | string | Vazio se sem alerta |
 | observacao | string | Vazio se sem observação |
 
 ### Aba 2 — Metadados
@@ -625,9 +452,9 @@ Ao consultar um candle e receber resposta vazia:
 |---|---|
 | Data e hora da execução | DD/MM/YYYY HH:MM:SS (UTC-3) |
 | Versão da ferramenta | 1.0.0 |
-| APIs consultadas | Binance, Coinbase Advanced Trade, Bybit, PTAX BCB |
-| Nota metodológica | "preco_referencia = mediana dos valores disponíveis por exchange. Taxa de câmbio: PTAX venda (BCB)." |
-| Fuso horário — preços | UTC |
+| APIs consultadas | Binance, PTAX BCB |
+| Nota metodológica | "valor_justo = preco_binance (close 23h59 BRT) × PTAX venda (BCB)." |
+| Fuso horário — preços | BRT (UTC-3) |
 | Fuso horário — PTAX | UTC-3 (Brasília) |
 
 ---
@@ -639,15 +466,7 @@ Variáveis requeridas no `.env`:
 ```
 BINANCE_API_KEY=
 BINANCE_API_SECRET=
-
-COINBASE_API_KEY=
-COINBASE_API_SECRET=
-
-BYBIT_API_KEY=
-BYBIT_API_SECRET=
 ```
-
-> Binance e Bybit usam endpoints públicos de klines — as chaves estão previstas para expansões futuras (ex: consulta de saldo). Nesta versão apenas Coinbase requer autenticação nas chamadas de candle.
 
 Regras:
 - Nenhuma variável `NEXT_PUBLIC_` para secrets.
