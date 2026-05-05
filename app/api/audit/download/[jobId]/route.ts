@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import jobs from "@/store/jobs";
+import { formatFilenameTimestampBrt } from "@/lib/time/br";
 
 type Params = Promise<{ jobId: string }>;
 
@@ -19,13 +20,7 @@ export async function GET(
   }
 
   // Filename with execution timestamp in UTC-3 (Brasília)
-  const now = new Date();
-  const brt = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-  const p = (n: number) => String(n).padStart(2, "0");
-  const datePart =
-    `${brt.getUTCFullYear()}${p(brt.getUTCMonth() + 1)}${p(brt.getUTCDate())}` +
-    `_${p(brt.getUTCHours())}${p(brt.getUTCMinutes())}${p(brt.getUTCSeconds())}`;
-  const filename = `Teste_ValorJusto_${datePart}.xlsx`;
+  const filename = `Teste_ValorJusto_${formatFilenameTimestampBrt()}.xlsx`;
 
   return new Response(new Uint8Array(job.result), {
     status: 200,

@@ -35,8 +35,8 @@ export async function runAuditJob(jobId: string): Promise<void> {
       }
 
       // Step 2: valor_justo = result_binance × ptax_data_base
-      let valor_justo: number | "N/D" = "N/D";
-      let diferenca_percentual: number | "N/D" = "N/D";
+      let valor_justo: number | "ERRO" = "ERRO";
+      let diferenca_percentual: number | "ERRO" = "ERRO";
       let status: "APROVADO" | "ALERTA" | "ERRO" = "ERRO";
 
       if (typeof result_binance === "number" && typeof ptax_data_base === "number") {

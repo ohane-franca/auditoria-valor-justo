@@ -1,11 +1,12 @@
 import ExcelJS from "exceljs";
 import type { AuditRow } from "./validator";
+import { formatExecTimeBrt } from "@/lib/time/br";
 
 export interface AuditResultRow extends AuditRow {
   result_binance: number | "N/D";
   ptax_data_base: number | "N/D";
-  valor_justo: number | "N/D";
-  diferenca_percentual: number | "N/D";
+  valor_justo: number | "ERRO";
+  diferenca_percentual: number | "ERRO";
   status: "APROVADO" | "ALERTA" | "ERRO";
   observacao: string;
 }
@@ -112,12 +113,7 @@ function buildResultsSheet(ws: ExcelJS.Worksheet, rows: AuditResultRow[]): void 
 }
 
 function buildMetadataSheet(ws: ExcelJS.Worksheet): void {
-  const now = new Date();
-  const brt = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-  const p   = (n: number) => String(n).padStart(2, "0");
-  const execTime =
-    `${p(brt.getUTCDate())}/${p(brt.getUTCMonth() + 1)}/${brt.getUTCFullYear()} ` +
-    `${p(brt.getUTCHours())}:${p(brt.getUTCMinutes())}:${p(brt.getUTCSeconds())} UTC-3`;
+  const execTime = formatExecTimeBrt();
 
   const entries: [string, string][] = [
     ["Data e hora da execução", execTime],
