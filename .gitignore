@@ -44,3 +44,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# cursor / runtime local caches (nunca commitar)
+.local/
+.cursor/

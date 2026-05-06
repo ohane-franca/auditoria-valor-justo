@@ -61,7 +61,8 @@ export function validateSpreadsheet(
     idx[col] = headers.indexOf(col);
   }
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  const hoje = new Date();
+  hoje.setUTCHours(0, 0, 0, 0);
 
   for (let i = 1; i < raw.length; i++) {
     const row = raw[i] as unknown[];
@@ -87,8 +88,8 @@ export function validateSpreadsheet(
       continue;
     }
     const quantidade = Number(qtdRaw);
-    if (isNaN(quantidade) || quantidade <= 0) {
-      errors.push(`Linha ${line}: quantidade deve ser um número positivo (recebido: ${qtdRaw}).`);
+    if (isNaN(quantidade)) {
+      errors.push(`Linha ${line}: quantidade não numérica (recebido: ${qtdRaw}).`);
       continue;
     }
 
@@ -97,8 +98,8 @@ export function validateSpreadsheet(
       continue;
     }
     const valorDeclarado = Number(valRaw);
-    if (isNaN(valorDeclarado) || valorDeclarado <= 0) {
-      errors.push(`Linha ${line}: valor_declarado deve ser um número positivo (recebido: ${valRaw}).`);
+    if (isNaN(valorDeclarado)) {
+      errors.push(`Linha ${line}: valor_declarado não numérico (recebido: ${valRaw}).`);
       continue;
     }
 
@@ -114,8 +115,11 @@ export function validateSpreadsheet(
       errors.push(`Linha ${line}: data_base inválida (${dataRaw}).`);
       continue;
     }
-    if (dataRaw >= todayStr) {
-      errors.push(`Linha ${line}: data_base não pode ser futura (${dataRaw}).`);
+    const dataBase = new Date(`${dataRaw}T00:00:00.000Z`);
+    if (dataBase >= hoje) {
+      errors.push(
+        `Linha ${line}: data_base deve ser uma data passada (não pode ser hoje ou futura) (${dataRaw}).`
+      );
       continue;
     }
 

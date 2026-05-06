@@ -17,7 +17,7 @@ Backend valida estrutura da planilha
         ↓
 Para cada linha: consulta Binance (close 23h59 BRT via candle 1h) em paralelo com PTAX venda (BCB)
         ↓
-Calcula valor_justo, diferenca_percentual e status
+Calcula valor_justo, valor_declarado_x_valor_justo e status
         ↓
 Exporta Teste_ValorJusto_[DATA_EXECUCAO].xlsx com 2 abas
 ```
@@ -167,6 +167,7 @@ Body:
 ```typescript
 {
   jobId: string          // UUID v4
+  total: number           // linhas válidas a processar (para UI de progresso)
 }
 ```
 
@@ -182,8 +183,8 @@ Body:
 1. Arquivo é .xlsx e tamanho ≤ 5 MB
 2. Aba 1 contém exatamente as colunas: `ticker`, `quantidade`, `valor_declarado`, `data_base`
 3. Nenhuma célula obrigatória vazia
-4. `data_base` em formato `YYYY-MM-DD` e data válida (não futura)
-5. `quantidade` e `valor_declarado` são números positivos
+4. `data_base` em formato `YYYY-MM-DD` e data válida (deve ser uma data passada — não pode ser hoje ou futura)
+5. `quantidade` e `valor_declarado` são numéricos (podem ser zero ou negativos). Valores vazios ou não numéricos são rejeitados; cenários especiais de quantidade zero/negativa são tratados no processamento (ver regras do orchestrator).
 
 ---
 
@@ -216,7 +217,26 @@ type AuditSummary = {
 
 ---
 
-### 4.3 `GET /api/audit/download/[jobId]`
+### 4.3 `GET /api/audit/status/[jobId]`
+
+Snapshot JSON do job (polling pela UI e ferramentas de diagnóstico).
+
+**Response 200:**
+```typescript
+{
+  status: "pending" | "processing" | "done" | "error"
+  processed: number
+  total: number
+  summary: AuditSummary | null
+  error: string | null
+}
+```
+
+**Response 404:** `{ error: "JOB_NOT_FOUND" }` quando o `jobId` não existe **nesta instância** (ID inválido ou Map sem afínidade entre réplicas).
+
+---
+
+### 4.4 `GET /api/audit/download/[jobId]`
 
 Retorna o arquivo .xlsx gerado.
 
@@ -239,7 +259,7 @@ Body: Buffer (arquivo xlsx)
 
 ---
 
-### 4.4 Endpoints internos (não expostos ao cliente)
+### 4.5 Endpoints internos (não expostos ao cliente)
 
 Estes módulos são funções TypeScript chamadas internamente pelo job de processamento, não rotas HTTP expostas.
 
@@ -262,6 +282,9 @@ auditoria-valor-justo/
 │   │       ├── progress/
 │   │       │   └── [jobId]/
 │   │       │       └── route.ts      # GET — SSE de progresso
+│   │       ├── status/
+│   │       │   └── [jobId]/
+│   │       │       └── route.ts      # GET — snapshot JSON (polling)
 │   │       └── download/
 │   │           └── [jobId]/
 │   │               └── route.ts      # GET — download do xlsx
@@ -278,9 +301,11 @@ auditoria-valor-justo/
 │   │   ├── validator.ts              # Valida estrutura da planilha
 │   │   ├── price-calculator.ts      # Status (APROVADO/ALERTA) por desvio percentual
 │   │   └── excel-exporter.ts        # Monta e serializa o xlsx de saída (2 abas)
+│   │   └── constants.ts             # Fonte da verdade: textos fixos, thresholds e metadados
 │   └── exchanges/
 │       ├── binance.ts                # fetchBinanceClose
 │       └── ptax.ts                   # fetchPtax
+│       └── token-config.ts           # Configurações de tokens (stablecoins, aliases, retry)
 ├── store/
 │   └── jobs.ts                       # Map em memória: jobId → JobState
 ├── components/
@@ -290,6 +315,8 @@ auditoria-valor-justo/
 │       ├── UploadDropzone.tsx    # Dropzone com feedback de arquivo
 │       ├── AlertCard.tsx         # Card de alerta de consistência
 │       └── MetricCard.tsx        # Card de contador por status
+├── scripts/
+│   └── diagnostic-audit-flow.mjs     # POST + poll status (sem SSE)
 ├── public/
 │   └── modelo.xlsx                   # Planilha modelo para download
 ├── .env                              # Chaves de API (nunca commitado)
@@ -298,7 +325,13 @@ auditoria-valor-justo/
 └── package.json
 ```
 
-**Nota sobre persistência de jobs:** Em Railway Serverless, o `Map` em memória (`store/jobs.ts`) persiste apenas dentro de uma mesma instância. Para esta versão, o arquivo xlsx gerado é mantido em memória como `Buffer` no `JobState` e servido imediatamente após a conclusão. O fluxo SSE + download deve ser completado na mesma sessão do browser. Não é necessário storage externo nesta versão.
+**Nota sobre persistência de jobs:** O estado dos jobs fica em um `Map` em memória (`store/jobs.ts`). Ele só existe **dentro do mesmo processo Node**. Em hospedagem com **várias réplicas/workers** ou balanceamento sem afínidade de sessão, um `POST /api/audit/start` pode criar o job na **instância A** enquanto `GET /api/audit/status/...`, SSE ou download podem cair na **instância B**, resultando em **`404`**, progresso parado ou “conexão interrompida” sem falha de Binance/PTAX.
+
+**Verificação operacional:** confirmar no painel (ex.: Railway) que há **apenas uma réplica** para esta versão, ou aplicar **sticky sessions** ao mesmo worker, ou migrar para **armazenamento compartilhado** (Redis, banco, objeto storage para o xlsx + metadados).
+
+**Diagnóstico sem SSE/UI:** com o app rodando, execute `npm run diagnostic:audit -- ./public/modelo.xlsx http://localhost:3000` (ajuste URL e caminho). O script faz apenas `POST` + polling em `/api/audit/status/[jobId]` e imprime HTTP + JSON a cada segundo — útil para separar problema de EventSource/proxy de problema de instância ou job.
+
+**Escopo atual:** O xlsx gerado permanece em memória no `JobState` até o download; completar upload → resultado na mesma janela continua sendo o fluxo esperado.
 
 ---
 
@@ -406,19 +439,33 @@ GET /olinda/servico/PTAX/versao/v1/odata/CotacaoDolarDia(dataCotacao=@dataCotaca
 
 ### 7.1 Preço e câmbio utilizados
 
-- `result_binance`: close às **23h59 BRT** da `data_base` (via candle 1h 02:00–02:59 UTC do dia D+1).
+- `close_USDT_BRT`: close às **23h59 BRT** da `data_base` (via candle 1h 02:00–02:59 UTC do dia D+1), em **USDT**.
+- `close_crypto21`: close às **21:59 UTC** da `data_base` (via candle 1h 21:00–21:59 UTC do próprio dia). Campo de evidência; não usado em cálculos.
 - `ptax_data_base`: **PTAX venda** (BCB) para a `data_base` (UTC-3). Em caso de ausência de cotação (feriado/fim de semana), usar o dia útil anterior (máx 5 dias retroativos) e registrar em `observacao`.
 
-### 7.2 Status final
+### 7.1.1 Resolução de tokens (pré-consulta)
 
-```typescript
-// valor_declarado já em BRL (total, não por unidade)
-const valorPorUnidade  = valor_declarado / quantidade         // BRL/unidade
-const valorJusto       = result_binance * ptax_data_base      // BRL/unidade
-const diferencaPerc    = Math.abs((valorPorUnidade - valorJusto) / valorJusto) * 100
+Antes de consultar a Binance, o ticker passa por uma etapa de resolução, com quatro categorias:
 
-const status = diferencaPerc > 1.5 ? "ALERTA" : "APROVADO"
-```
+1. **Stablecoins USD** — preço fixo $1,0000, sem consulta à API.
+2. **Rebranding** — ticker antigo mapeado para ticker atual antes da consulta; alias registrado em `observacao`.
+3. **Par alternativo** — previsto para próxima iteração.
+4. **Não listado** — status `ERRO`, sem preço de mercado observável, requer critério alternativo de mensuração pelo auditor.
+
+### 7.2 Fluxo de Cálculo
+
+| Variável | Fórmula |
+|---|---|
+| valor_justo | close_USDT_BRT × ABS(quantidade) × ptax_data_base quando quantidade ≠ 0 (BRL total); ver quantidade zero abaixo |
+| valor_declarado_x_valor_justo | ((valor_declarado − valor_justo) ÷ valor_justo) × 100 |
+| status | APROVADO se ABS(valor_declarado_x_valor_justo) ≤ 1,5% \| ALERTA se ABS(valor_declarado_x_valor_justo) > 1,5% |
+| observacao | Registra datas retroativas quando diferentes da data_base |
+
+**Ajustes de quantidade no processamento (`orchestrator`):**
+
+- `quantidade < 0`: usa **ABS(quantidade)** no cálculo de `valor_justo`; `observacao` inclui: `Quantidade negativa — verificar natureza da posição`.
+- `quantidade === 0`: não calcula `valor_justo`; `valor_justo` e `valor_declarado_x_valor_justo` como `N/D`; `status = ERRO`; `observacao` inclui: `Quantidade zero — valor justo não calculado`.
+- `valor_declarado === 0`: processamento normal da métrica (tende a `valor_declarado_x_valor_justo` negativo e `ALERTA` se acima do threshold em valor absoluto).
 
 ### 7.3 Tratamento de fim de semana / feriado nos preços de exchange
 
@@ -439,10 +486,11 @@ Ao consultar um candle e receber resposta vazia:
 | quantidade | number | Conforme informado |
 | valor_declarado | number | Conforme informado (BRL total) |
 | data_base | string | YYYY-MM-DD |
-| result_binance | number \| "N/D" | Preço de fechamento em USD |
+| close_USDT_BRT | number \| "N/D" | Preço de fechamento em USDT (23h59 BRT) |
+| close_crypto21 | number \| "N/D" | Preço de fechamento em USD (21:59 UTC) — evidência |
 | ptax_data_base | number \| "N/D" | Taxa PTAX venda (BRL/USD) |
-| valor_justo | number \| "ERRO" | Em BRL/unidade |
-| diferenca_percentual | number \| "ERRO" | Em % (ex: 1.52) |
+| valor_justo | number \| "ERRO" | Em BRL total |
+| valor_declarado_x_valor_justo | number \| "ERRO" | Em % com sinal (ex: -1.52) |
 | status | "APROVADO" \| "ALERTA" \| "ERRO" | |
 | observacao | string | Vazio se sem observação |
 

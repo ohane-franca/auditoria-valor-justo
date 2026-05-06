@@ -1,24 +1,25 @@
-// calcularStatus(valorDeclarado, quantidade, valorJusto)
-// Todos os valores em BRL. valorJusto já convertido via PTAX (BRL/unidade).
+// calcularStatus(valorDeclarado, valorJusto)
+// Todos os valores em BRL (totais). valorJusto já convertido via PTAX (BRL total).
 //
 // Exemplo 1 — APROVADO:
-//   calcularStatus(578400, 6, 96400)
-//   valorPorUnidade = 96400
-//   diferenca = |96400 - 96400| / 96400 × 100 = 0,0% → "APROVADO"
+//   calcularStatus(1_140_000, 1_140_000)
+//   valor_declarado_x_valor_justo = (1.140.000 - 1.140.000) / 1.140.000 × 100 = 0,0% → "APROVADO"
 //
 // Exemplo 2 — ALERTA:
-//   calcularStatus(590000, 6, 96400)
-//   valorPorUnidade = 98333,33
-//   diferenca = |98333,33 - 96400| / 96400 × 100 = 2,01% → "ALERTA"
+//   calcularStatus(1_200_000, 1_140_000)
+//   valor_declarado_x_valor_justo = (1.200.000 - 1.140.000) / 1.140.000 × 100 = +5,26% → "ALERTA"
+import { THRESHOLD_DIVERGENCIA } from "@/lib/audit/constants";
+
 export function calcularStatus(
   valorDeclarado: number,
-  quantidade: number,
   valorJusto: number
-): { diferenca_percentual: number; status: "APROVADO" | "ALERTA" } {
-  const valorPorUnidade = valorDeclarado / quantidade;
-  const diferenca_percentual =
-    Math.abs((valorPorUnidade - valorJusto) / valorJusto) * 100;
-  const status = diferenca_percentual > 1.5 ? "ALERTA" : "APROVADO";
+): { valor_declarado_x_valor_justo: number; status: "APROVADO" | "ALERTA" } {
+  const valor_declarado_x_valor_justo =
+    ((valorDeclarado - valorJusto) / valorJusto) * 100;
+  const status =
+    Math.abs(valor_declarado_x_valor_justo) > THRESHOLD_DIVERGENCIA
+      ? "ALERTA"
+      : "APROVADO";
 
-  return { diferenca_percentual, status };
+  return { valor_declarado_x_valor_justo, status };
 }

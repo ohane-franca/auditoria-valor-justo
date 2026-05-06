@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { validateSpreadsheet } from "@/lib/audit/validator";
+import { runAuditJob } from "@/lib/audit/orchestrator";
 import jobs from "@/store/jobs";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
@@ -57,5 +58,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     rows,
   });
 
-  return NextResponse.json({ jobId });
+  runAuditJob(jobId).catch((err) => {
+    const j = jobs.get(jobId);
+    if (j && j.status !== "done") {
+      j.status = "error";
+      j.error = err instanceof Error ? err.message : "Erro desconhecido";
+    }
+  });
+
+  return NextResponse.json({ jobId, total: rows.length });
 }

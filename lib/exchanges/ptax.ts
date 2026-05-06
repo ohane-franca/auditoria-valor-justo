@@ -6,8 +6,7 @@ const BASE_URL = "https://olinda.bcb.gov.br";
 const ODATA_PATH =
   "/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarDia(dataCotacao=@dataCotacao)";
 
-const RETRY_DELAYS_MS = [500, 1_000, 2_000];
-const MAX_RETROACTIVE_DAYS = 5;
+import { MAX_RETROACTIVE_DAYS, RETRY_DELAYS_MS } from "@/lib/exchanges/token-config";
 
 export type PtaxResult = {
   rate: number;

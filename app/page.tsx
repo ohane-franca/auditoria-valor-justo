@@ -25,11 +25,30 @@ export default function Home() {
   const [errorTitle, setErrorTitle] = useState("Erro");
   const esRef = useRef<EventSource | null>(null);
   const sseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => {
-    esRef.current?.close();
-    if (sseTimeoutRef.current) clearTimeout(sseTimeoutRef.current);
-  }, []);
+  function stopPolling() {
+    if (pollIntervalRef.current != null) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+  }
+
+  function stopJobTimeout() {
+    if (sseTimeoutRef.current != null) {
+      clearTimeout(sseTimeoutRef.current);
+      sseTimeoutRef.current = null;
+    }
+  }
+
+  useEffect(
+    () => () => {
+      esRef.current?.close();
+      if (sseTimeoutRef.current != null) clearTimeout(sseTimeoutRef.current);
+      if (pollIntervalRef.current != null) clearInterval(pollIntervalRef.current);
+    },
+    []
+  );
 
   async function handleProcess() {
     if (!file) return;
@@ -55,45 +74,117 @@ export default function Home() {
       return;
     }
 
-    const { jobId: id } = await res.json();
+    const body = (await res.json()) as { jobId: string; total?: number };
+    const id = body.jobId;
+    const totalLinhas = typeof body.total === "number" ? body.total : 0;
     setJobId(id);
-    setProgress({ processed: 0, total: 0 });
+    setProgress({ processed: 0, total: totalLinhas });
     setPhase("processing");
+
+    stopPolling();
+
+    let consecutiveStatus404 = 0;
 
     const es = new EventSource(`/api/audit/progress/${id}`);
     esRef.current = es;
 
+    const pollOnce = async (): Promise<boolean> => {
+      try {
+        const r = await fetch(`/api/audit/status/${id}`, { cache: "no-store" });
+
+        if (r.status === 404) {
+          consecutiveStatus404++;
+          if (consecutiveStatus404 >= 2) {
+            stopJobTimeout();
+            stopPolling();
+            esRef.current?.close();
+            setErrorTitle("Erro no processamento");
+            setErrors([
+              "Job não encontrado neste servidor. Isso costuma ocorrer ao usar várias réplicas ou workers (cada instância tem sua própria memória), ou após reinício do servidor. Configure uma única instância, sessão afín ao mesmo worker, ou um armazenamento compartilhado para jobs.",
+            ]);
+            setPhase("error");
+            return true;
+          }
+          return false;
+        }
+
+        consecutiveStatus404 = 0;
+
+        if (!r.ok) return false;
+
+        const j = (await r.json()) as {
+          status: string;
+          processed: number;
+          total: number;
+          summary: AuditSummary | null;
+          error: string | null;
+        };
+        setProgress({ processed: j.processed ?? 0, total: j.total ?? 0 });
+        if (j.status === "done" && j.summary) {
+          stopJobTimeout();
+          stopPolling();
+          esRef.current?.close();
+          setSummary(j.summary);
+          setPhase("result");
+          return true;
+        }
+        if (j.status === "error") {
+          stopJobTimeout();
+          stopPolling();
+          esRef.current?.close();
+          setErrorTitle("Erro no processamento");
+          setErrors([j.error ?? "Erro desconhecido"]);
+          setPhase("error");
+          return true;
+        }
+      } catch {
+        /* ignorar falha transitória de rede */
+      }
+      return false;
+    };
+
+    void pollOnce();
+    pollIntervalRef.current = setInterval(() => void pollOnce(), 2000);
+
     sseTimeoutRef.current = setTimeout(() => {
-      es.close();
+      esRef.current?.close();
+      stopPolling();
+      sseTimeoutRef.current = null;
       setErrorTitle("Tempo limite excedido");
       setErrors(["Tempo limite excedido. Tente novamente."]);
       setPhase("error");
     }, 300_000);
 
     es.onmessage = (e) => {
-      const event = JSON.parse(e.data);
+      let event: { type: string; processed?: number; total?: number; summary?: AuditSummary; message?: string };
+      try {
+        event = JSON.parse(e.data);
+      } catch {
+        return;
+      }
       if (event.type === "progress") {
-        setProgress({ processed: event.processed, total: event.total });
-      } else if (event.type === "done") {
-        clearTimeout(sseTimeoutRef.current!);
+        setProgress({
+          processed: event.processed ?? 0,
+          total: event.total ?? 0,
+        });
+      } else if (event.type === "done" && event.summary) {
+        stopJobTimeout();
+        stopPolling();
         es.close();
         setSummary(event.summary);
         setPhase("result");
       } else if (event.type === "error") {
-        clearTimeout(sseTimeoutRef.current!);
+        stopJobTimeout();
+        stopPolling();
         es.close();
         setErrorTitle("Erro no processamento");
-        setErrors([event.message]);
+        setErrors([event.message ?? "Erro desconhecido"]);
         setPhase("error");
       }
     };
 
     es.onerror = () => {
-      clearTimeout(sseTimeoutRef.current!);
       es.close();
-      setErrorTitle("Erro no processamento");
-      setErrors(["Conexão com o servidor foi interrompida."]);
-      setPhase("error");
     };
   }
 
@@ -108,6 +199,8 @@ export default function Home() {
 
   function reset() {
     esRef.current?.close();
+    stopJobTimeout();
+    stopPolling();
     setPhase("idle");
     setFile(null);
     setDropzoneKey((k) => k + 1);
@@ -163,16 +256,6 @@ export default function Home() {
             }}
           >
             Teste de Mensuração de Valor Justo
-            <br />
-            <span
-              style={{
-                fontSize: "var(--font-size-md)",
-                fontWeight: "var(--font-weight-body)",
-                color: "var(--color-text-muted)",
-              }}
-            >
-              Ativos Digitais — CLA Brasil
-            </span>
           </h1>
 
           {/* ── Fase 1: Idle ── */}
@@ -296,9 +379,7 @@ export default function Home() {
                     textAlign: "center",
                   }}
                 >
-                  {progress.total > 0
-                    ? `${progress.processed} de ${progress.total} linhas`
-                    : "Iniciando…"}
+                  {`${progress.processed} de ${progress.total} linha${progress.total === 1 ? "" : "s"}`}
                 </p>
               </div>
 

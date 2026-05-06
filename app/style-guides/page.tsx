@@ -12,7 +12,7 @@ import { MetricCard } from "@/components/ui/MetricCard";
 const tableColumns: Column[] = [
   { key: "ticker",           label: "Ticker"           },
   { key: "quantidade",       label: "Qtd",    numeric: true },
-  { key: "result_binance",   label: "Binance (USD)",  numeric: true },
+  { key: "close_USDT_BRT",   label: "Binance (USDT)", numeric: true },
   { key: "ptax",             label: "PTAX",           numeric: true },
   { key: "valor_justo",      label: "V. Justo (BRL)", numeric: true },
   { key: "diferenca",        label: "Dif. %",         numeric: true },
@@ -25,17 +25,17 @@ const tableColumns: Column[] = [
 
 const tableRows = [
   {
-    ticker: "BTC", quantidade: "2,5000", result_binance: "96.400,00",
+    ticker: "BTC", quantidade: "2,5000", close_USDT_BRT: "96.400,00",
     ptax: "6,1803",
     valor_justo: "595.585,20", diferenca: "49,60%", status: "ALERTA",
   },
   {
-    ticker: "ETH", quantidade: "10,0000", result_binance: "3.380,00",
+    ticker: "ETH", quantidade: "10,0000", close_USDT_BRT: "3.380,00",
     ptax: "6,1803",
     valor_justo: "20.889,41", diferenca: "0,80%", status: "APROVADO",
   },
   {
-    ticker: "XRP", quantidade: "10.000", result_binance: "N/D",
+    ticker: "XRP", quantidade: "10.000", close_USDT_BRT: "N/D",
     ptax: "6,1803",
     valor_justo: "13.596,66", diferenca: "59,50%", status: "ALERTA",
   },

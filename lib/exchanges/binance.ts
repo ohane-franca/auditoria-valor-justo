@@ -3,21 +3,24 @@
 // O close desse candle = 02:59:59 UTC D+1 = 23:59:59 BRT D — exato.
 // (candle diário da Binance é sempre UTC puro; não existe "candle BRT" nativo)
 // Symbol format: {ticker}USDT (ex: BTCUSDT)
-// BINANCE_API_KEY lida do .env — endpoint público de klines não exige auth
-// por ora, mas a chave está disponível para expansões futuras.
+// Endpoint público de klines não exige autenticação.
+// Mantemos suporte a configuração por .env apenas se houver expansão futura
+// (ex.: endpoints privados); nesta versão não usamos BINANCE_API_KEY.
+
+import {
+  MAX_RETROACTIVE_DAYS,
+  RETROACTIVE_DELAY_MS,
+  RETRY_DELAYS_MS,
+  USD_STABLECOINS,
+  resolveTicker,
+} from "@/lib/exchanges/token-config";
 
 const BASE_URL = "https://api.binance.com";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _API_KEY = process.env.BINANCE_API_KEY ?? "";
-
-// Delays entre retentativas para 429 / 5xx (máx 3 retentativas, 4 tentativas total)
-const RETRY_DELAYS_MS = [500, 1_000, 2_000];
-const MAX_RETROACTIVE_DAYS = 5;
-const RETROACTIVE_DELAY_MS = 100; // delay mínimo entre buscas retroativas
 
 export type BinanceResult = {
   price: number;
   dateUsed: string; // YYYY-MM-DD; difere de `date` quando dia retroativo foi usado
+  aliasUsed: string | null;
 };
 
 function addDays(dateStr: string, days: number): string {
@@ -32,6 +35,13 @@ function brtCloseHourMs(dateStr: string): { startTime: number; endTime: number }
   const nextDay = addDays(dateStr, 1);
   const startTime = new Date(`${nextDay}T02:00:00.000Z`).getTime();
   const endTime   = new Date(`${nextDay}T02:59:59.999Z`).getTime();
+  return { startTime, endTime };
+}
+
+// Retorna a janela do candle 1h 21:00–21:59:59 UTC do próprio dia dateStr.
+function utc21CloseHourMs(dateStr: string): { startTime: number; endTime: number } {
+  const startTime = new Date(`${dateStr}T21:00:00.000Z`).getTime();
+  const endTime   = new Date(`${dateStr}T21:59:59.999Z`).getTime();
   return { startTime, endTime };
 }
 
@@ -91,7 +101,13 @@ export async function fetchBinanceClose(
   ticker: string,
   date: string // YYYY-MM-DD (data_base em BRT)
 ): Promise<BinanceResult | null> {
-  const symbol = `${ticker.toUpperCase()}USDT`;
+  // Ordem obrigatória: 1) stablecoin (sem API) 2) alias 3) consulta API
+  if (USD_STABLECOINS.has(ticker.toUpperCase())) {
+    return { price: 1.0, dateUsed: date, aliasUsed: null };
+  }
+
+  const resolved = resolveTicker(ticker);
+  const symbol = `${resolved.symbol}USDT`;
 
   for (let dayOffset = 0; dayOffset <= MAX_RETROACTIVE_DAYS; dayOffset++) {
     if (dayOffset > 0) await sleep(RETROACTIVE_DELAY_MS);
@@ -103,7 +119,35 @@ export async function fetchBinanceClose(
     if (result === "empty") continue; // fim de semana/feriado — tenta dia anterior
     if (result === null) return null; // erro irrecuperável
 
-    return { price: result, dateUsed };
+    return { price: result, dateUsed, aliasUsed: resolved.alias };
+  }
+
+  return null; // 5 dias retroativos esgotados
+}
+
+export async function fetchBinanceClose21(
+  ticker: string,
+  date: string // YYYY-MM-DD (data_base)
+): Promise<BinanceResult | null> {
+  // Ordem obrigatória: 1) stablecoin (sem API) 2) alias 3) consulta API
+  if (USD_STABLECOINS.has(ticker.toUpperCase())) {
+    return { price: 1.0, dateUsed: date, aliasUsed: null };
+  }
+
+  const resolved = resolveTicker(ticker);
+  const symbol = `${resolved.symbol}USDT`;
+
+  for (let dayOffset = 0; dayOffset <= MAX_RETROACTIVE_DAYS; dayOffset++) {
+    if (dayOffset > 0) await sleep(RETROACTIVE_DELAY_MS);
+
+    const dateUsed = addDays(date, -dayOffset);
+    const { startTime, endTime } = utc21CloseHourMs(dateUsed);
+    const result = await fetchKline(symbol, startTime, endTime);
+
+    if (result === "empty") continue; // fim de semana/feriado — tenta dia anterior
+    if (result === null) return null; // erro irrecuperável
+
+    return { price: result, dateUsed, aliasUsed: resolved.alias };
   }
 
   return null; // 5 dias retroativos esgotados

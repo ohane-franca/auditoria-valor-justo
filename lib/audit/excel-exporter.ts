@@ -1,12 +1,23 @@
 import ExcelJS from "exceljs";
 import type { AuditRow } from "./validator";
 import { formatExecTimeBrt } from "@/lib/time/br";
+import { createHash } from "crypto";
+import {
+  FONTE_PRECOS,
+  FUSO_PRECOS,
+  FUSO_PTAX,
+  NORMA,
+  NOTA_METODOLOGICA,
+  TAXA_CAMBIO,
+  VERSAO,
+} from "@/lib/audit/constants";
 
 export interface AuditResultRow extends AuditRow {
-  result_binance: number | "N/D";
+  close_USDT_BRT: number | "N/D";
+  close_crypto21: number | "N/D";
   ptax_data_base: number | "N/D";
-  valor_justo: number | "ERRO";
-  diferenca_percentual: number | "ERRO";
+  valor_justo: number | "N/D";
+  valor_declarado_x_valor_justo: number | "N/D";
   status: "APROVADO" | "ALERTA" | "ERRO";
   observacao: string;
 }
@@ -23,18 +34,28 @@ const FMT_PCT = '0.00"%"'; // appends literal % without multiplying by 100
 
 type ColType = "string" | "number4" | "percent2";
 
-const COLUMNS: Array<{ key: keyof AuditResultRow; label: string; type: ColType }> = [
+const COLUMNS: Array<{
+  key: keyof AuditResultRow;
+  label: string;
+  type: ColType;
+  numFmt?: string;
+}> = [
   { key: "ticker",               label: "ticker",               type: "string"   },
-  { key: "quantidade",           label: "quantidade",           type: "number4"  },
-  { key: "valor_declarado",      label: "valor_declarado",      type: "number4"  },
+  { key: "quantidade",           label: "quantidade",           type: "number4",  numFmt: "0.00000000" },
+  { key: "valor_declarado",      label: "valor_declarado",      type: "number4",  numFmt: '"R$ "#,##0.00' },
   { key: "data_base",            label: "data_base",            type: "string"   },
-  { key: "result_binance",       label: "result_binance",       type: "number4"  },
-  { key: "ptax_data_base",       label: "ptax_data_base",       type: "number4"  },
-  { key: "valor_justo",          label: "valor_justo",          type: "number4"  },
-  { key: "diferenca_percentual", label: "diferenca_percentual", type: "percent2" },
+  { key: "close_USDT_BRT",       label: "close_USDT_BRT",       type: "number4",  numFmt: '"$"#,##0.0000' },
+  { key: "close_crypto21",       label: "close_crypto21",       type: "number4",  numFmt: '"$"#,##0.0000' },
+  { key: "ptax_data_base",       label: "ptax_data_base",       type: "number4",  numFmt: "0.0000" },
+  { key: "valor_justo",          label: "valor_justo",          type: "number4",  numFmt: '"R$ "#,##0.00' },
+  { key: "valor_declarado_x_valor_justo", label: "valor_declarado_x_valor_justo", type: "percent2", numFmt: '+0.00"%";-0.00"%";0.00"%"' },
   { key: "status",               label: "status",               type: "string"   },
   { key: "observacao",           label: "observacao",           type: "string"   },
 ];
+
+const CLR_SECTION_BG = "FF1B2A4A"; // #1B2A4A
+const CLR_LABEL_BG   = "FFF8F9FA"; // #F8F9FA
+const CLR_TEXT_WHITE = "FFFFFFFF";
 
 function solidFill(argb: string): ExcelJS.Fill {
   return { type: "pattern", pattern: "solid", fgColor: { argb } };
@@ -95,7 +116,7 @@ function buildResultsSheet(ws: ExcelJS.Worksheet, rows: AuditResultRow[]): void 
       cell.fill = solidFill(bg);
 
       if (typeof val === "number" && col.type !== "string") {
-        cell.numFmt = col.type === "percent2" ? FMT_PCT : FMT_4DP;
+        cell.numFmt = col.numFmt ?? (col.type === "percent2" ? FMT_PCT : FMT_4DP);
         cell.alignment = { horizontal: "right" };
       } else {
         cell.value = String(val);
@@ -112,43 +133,99 @@ function buildResultsSheet(ws: ExcelJS.Worksheet, rows: AuditResultRow[]): void 
   });
 }
 
-function buildMetadataSheet(ws: ExcelJS.Worksheet): void {
+function buildMetadataSheet(
+  ws: ExcelJS.Worksheet,
+  rows: AuditResultRow[],
+  hash: string
+): void {
+  ws.getColumn(1).width = 35;
+  ws.getColumn(2).width = 60;
+
+  const dataBase = rows[0]?.data_base ?? "N/D";
   const execTime = formatExecTimeBrt();
 
-  const entries: [string, string][] = [
-    ["Data e hora da execução", execTime],
-    ["Versão da ferramenta", "1.0.0"],
-    ["APIs consultadas", "Binance API (GET /api/v3/klines, interval=1h), PTAX BCB"],
-    [
-      "Nota metodológica",
-      "valor_justo = preco_binance (close 23h59 BRT) × ptax_venda (BCB). Preço capturado via candle 1h Binance (02:00-02:59 UTC D+1 = 23:00-23:59 BRT). Taxa de câmbio: PTAX venda (BCB).",
-    ],
-    ["Fuso horário — preços", "BRT (UTC-3)"],
-    ["Fuso horário — PTAX",   "UTC-3 (Brasília)"],
-  ];
+  const total = rows.length;
+  const aprovados = rows.filter((r) => r.status === "APROVADO").length;
+  const alertas = rows.filter((r) => r.status === "ALERTA").length;
+  const erros = rows.filter((r) => r.status === "ERRO").length;
 
-  let maxLabel = 0;
+  function addSection(title: string) {
+    const r = ws.addRow([title, ""]);
+    ws.mergeCells(r.number, 1, r.number, 2);
 
-  for (const [label, value] of entries) {
-    const excelRow = ws.addRow([label, value]);
-
-    const labelCell = excelRow.getCell(1);
-    labelCell.font = { bold: true };
-    labelCell.alignment = { horizontal: "left" };
-
-    const valueCell = excelRow.getCell(2);
-    valueCell.alignment = { horizontal: "left", wrapText: true };
-
-    if (label.length > maxLabel) maxLabel = label.length;
+    const c = r.getCell(1);
+    c.font = { bold: true, color: { argb: CLR_TEXT_WHITE } };
+    c.fill = solidFill(CLR_SECTION_BG);
+    c.alignment = { horizontal: "left", vertical: "middle" };
   }
 
-  ws.getColumn(1).width = maxLabel + 2;
-  ws.getColumn(2).width = 80;
+  function addField(label: string, value: string) {
+    const r = ws.addRow([label, value]);
+
+    const labelCell = r.getCell(1);
+    labelCell.font = { bold: true };
+    labelCell.fill = solidFill(CLR_LABEL_BG);
+    labelCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+
+    const valueCell = r.getCell(2);
+    valueCell.font = {};
+    valueCell.fill = solidFill(CLR_WHITE);
+    valueCell.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+  }
+
+  // IDENTIFICAÇÃO
+  addSection("IDENTIFICAÇÃO");
+  addField("Data-base do teste", dataBase);
+  addField("Data e hora da execução", execTime);
+
+  // ESCOPO
+  addSection("ESCOPO");
+  addField("Total de ativos testados", String(total));
+  addField("Aprovados", String(aprovados));
+  addField("Alertas", String(alertas));
+  addField("Erros", String(erros));
+
+  // BASE TÉCNICA
+  addSection("BASE TÉCNICA");
+  addField("Versão da ferramenta", VERSAO);
+  addField("Norma aplicada", NORMA);
+  addField("Fonte de preços", FONTE_PRECOS);
+  addField("Taxa de câmbio", TAXA_CAMBIO);
+
+  // METODOLOGIA
+  addSection("METODOLOGIA");
+  addField("Nota metodológica", NOTA_METODOLOGICA);
+
+  // NOTAS TÉCNICAS
+  addSection("NOTAS TÉCNICAS");
+  addField("Fuso — preços", FUSO_PRECOS);
+  addField("Fuso — PTAX", FUSO_PTAX);
+
+  // INTEGRIDADE
+  addSection("INTEGRIDADE");
+  addField("Hash SHA-256 (aba Resultados)", hash);
+}
+
+function serializeResultsDeterministic(rows: AuditResultRow[]): string {
+  const header = COLUMNS.map((c) => c.label).join("|");
+  const lines = rows.map((row) =>
+    COLUMNS.map((c) => String(row[c.key])).join("|")
+  );
+  return [header, ...lines].join("\n");
+}
+
+function sha256Hex(input: string): string {
+  return createHash("sha256").update(input, "utf8").digest("hex");
 }
 
 export async function exportToExcel(rows: AuditResultRow[]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
+
   buildResultsSheet(wb.addWorksheet("Resultados"), rows);
-  buildMetadataSheet(wb.addWorksheet("Metadados"));
+
+  const deterministic = serializeResultsDeterministic(rows);
+  const hash = sha256Hex(deterministic);
+
+  buildMetadataSheet(wb.addWorksheet("Metadados"), rows, hash);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
