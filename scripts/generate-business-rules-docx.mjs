@@ -105,7 +105,7 @@ const docA = [
   ),
   h("8. O que ela registra como evidência (campos da planilha)", HeadingLevel.HEADING_2),
   pText(
-    "A ferramenta exporta para cada linha: ticker, quantidade, valor_declarado, data_base, close_USDT_BRT, close_crypto21, ptax_data_base, valor_justo, valor_declarado_x_valor_justo, status e observacao."
+    "A ferramenta exporta para cada linha: ticker, quantidade, valor_declarado, data_base, close_USDT_BRT, close_21UTC_USD, ptax_data_base, valor_justo, valor_declarado_x_valor_justo, status e observacao."
   ),
 ];
 

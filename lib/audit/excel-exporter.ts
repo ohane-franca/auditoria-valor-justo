@@ -14,7 +14,7 @@ import {
 
 export interface AuditResultRow extends AuditRow {
   close_USDT_BRT: number | "N/D";
-  close_crypto21: number | "N/D";
+  close_21UTC_USD: number | "N/D";
   ptax_data_base: number | "N/D";
   valor_justo: number | "N/D";
   valor_declarado_x_valor_justo: number | "N/D";
@@ -45,7 +45,7 @@ const COLUMNS: Array<{
   { key: "valor_declarado",      label: "valor_declarado",      type: "number4",  numFmt: '"R$ "#,##0.00' },
   { key: "data_base",            label: "data_base",            type: "string"   },
   { key: "close_USDT_BRT",       label: "close_USDT_BRT",       type: "number4",  numFmt: '"$"#,##0.0000' },
-  { key: "close_crypto21",       label: "close_crypto21",       type: "number4",  numFmt: '"$"#,##0.0000' },
+  { key: "close_21UTC_USD",      label: "close_21UTC_USD",      type: "number4",  numFmt: '"$"#,##0.0000' },
   { key: "ptax_data_base",       label: "ptax_data_base",       type: "number4",  numFmt: "0.0000" },
   { key: "valor_justo",          label: "valor_justo",          type: "number4",  numFmt: '"R$ "#,##0.00' },
   { key: "valor_declarado_x_valor_justo", label: "valor_declarado_x_valor_justo", type: "percent2", numFmt: '+0.00"%";-0.00"%";0.00"%"' },

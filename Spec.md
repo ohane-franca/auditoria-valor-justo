@@ -440,7 +440,7 @@ GET /olinda/servico/PTAX/versao/v1/odata/CotacaoDolarDia(dataCotacao=@dataCotaca
 ### 7.1 Preço e câmbio utilizados
 
 - `close_USDT_BRT`: close às **23h59 BRT** da `data_base` (via candle 1h 02:00–02:59 UTC do dia D+1), em **USDT**.
-- `close_crypto21`: close às **21:59 UTC** da `data_base` (via candle 1h 21:00–21:59 UTC do próprio dia). Campo de evidência; não usado em cálculos.
+- `close_21UTC_USD`: close às **21:59 UTC** da `data_base` (via candle 1h 21:00–21:59 UTC do próprio dia). Campo de evidência; não usado em cálculos.
 - `ptax_data_base`: **PTAX venda** (BCB) para a `data_base` (UTC-3). Em caso de ausência de cotação (feriado/fim de semana), usar o dia útil anterior (máx 5 dias retroativos) e registrar em `observacao`.
 
 ### 7.1.1 Resolução de tokens (pré-consulta)
@@ -487,7 +487,7 @@ Ao consultar um candle e receber resposta vazia:
 | valor_declarado | number | Conforme informado (BRL total) |
 | data_base | string | YYYY-MM-DD |
 | close_USDT_BRT | number \| "N/D" | Preço de fechamento em USDT (23h59 BRT) |
-| close_crypto21 | number \| "N/D" | Preço de fechamento em USD (21:59 UTC) — evidência |
+| close_21UTC_USD | number \| "N/D" | Preço de fechamento em USD (21:59 UTC) — evidência |
 | ptax_data_base | number \| "N/D" | Taxa PTAX venda (BRL/USD) |
 | valor_justo | number \| "ERRO" | Em BRL total |
 | valor_declarado_x_valor_justo | number \| "ERRO" | Em % com sinal (ex: -1.52) |

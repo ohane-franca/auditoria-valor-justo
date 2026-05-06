@@ -125,6 +125,7 @@ export async function fetchBinanceClose(
   return null; // 5 dias retroativos esgotados
 }
 
+/** Close 21h UTC (USDT); map `price` → campo `close_21UTC_USD` na exportação. */
 export async function fetchBinanceClose21(
   ticker: string,
   date: string // YYYY-MM-DD (data_base)

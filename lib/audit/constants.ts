@@ -1,7 +1,7 @@
 export const VERSAO = "1.0.0";
 export const NORMA = "Resolução CMN nº 5.281/2026 / CPC 46";
 export const FONTE_PRECOS =
-  "Binance API (candle 1h, close 23h59 BRT em USDT) + evidência close 21h UTC";
+  "Binance API (candle 1h, close 23h59 BRT em USDT) + evidência close_21UTC_USD (21h UTC)";
 export const TAXA_CAMBIO = "PTAX venda — Banco Central do Brasil";
 export const FUSO_PRECOS =
   "UTC (02:00-02:59 UTC D+1 = 23:00-23:59 BRT)";
@@ -12,7 +12,7 @@ export const NOTA_METODOLOGICA = `\
 Valor justo = close_USDT_BRT (Binance, 23h59 BRT em USDT) × quantidade × \
 PTAX venda (BCB). Métrica valor_declarado_x_valor_justo em % com sinal; \
 status por valor absoluto com threshold de ${THRESHOLD_DIVERGENCIA}%. \
-A coluna close_crypto21 (21h UTC) é evidência adicional e não \
+A coluna close_21UTC_USD (21h UTC) é evidência adicional e não \
 afeta o cálculo.
 
 Resolução de tokens: (1) Stablecoins USD — preço fixo $1,0000, \

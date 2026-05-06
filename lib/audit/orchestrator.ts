@@ -40,7 +40,7 @@ export async function runAuditJob(jobId: string): Promise<void> {
       ]);
 
       const close_USDT_BRT: number | "N/D" = binanceResult?.price ?? "N/D";
-      const close_crypto21: number | "N/D" = binance21Result?.price ?? "N/D";
+      const close_21UTC_USD: number | "N/D" = binance21Result?.price ?? "N/D";
       const ptax_data_base: number | "N/D" = ptaxResult?.rate ?? "N/D";
 
       // Build observacao from retroactive date fallbacks
@@ -64,7 +64,7 @@ export async function runAuditJob(jobId: string): Promise<void> {
       const stableUsdRow =
         USD_STABLECOINS.has(tickerUpper) &&
         ((typeof close_USDT_BRT === "number" && close_USDT_BRT === 1.0) ||
-          (typeof close_crypto21 === "number" && close_crypto21 === 1.0));
+          (typeof close_21UTC_USD === "number" && close_21UTC_USD === 1.0));
       if (stableUsdRow) {
         observacoes.push(OBS_STABLECOIN);
       }
@@ -99,7 +99,7 @@ export async function runAuditJob(jobId: string): Promise<void> {
       results.push({
         ...row,
         close_USDT_BRT,
-        close_crypto21,
+        close_21UTC_USD,
         ptax_data_base,
         valor_justo,
         valor_declarado_x_valor_justo,
