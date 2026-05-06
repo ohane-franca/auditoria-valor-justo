@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "diagnostic:audit": "node scripts/diagnostic-audit-flow.mjs"
+    "diagnostic:audit": "node scripts/diagnostic-audit-flow.mjs",
+    "generate:modelo": "node scripts/generate-modelo-xlsx.mjs"
   },
   "dependencies": {
     "docx": "^9.6.1",
@@ -26,6 +27,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "xlsx-js-style": "^1.2.0"
   }
 }
